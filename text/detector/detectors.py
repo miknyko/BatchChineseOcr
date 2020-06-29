@@ -17,7 +17,7 @@ class TextDetector:
     """
         Detect text from an image
     """
-    def __init__(self,MAX_HORIZONTAL_GAP=30,MIN_V_OVERLAPS=0.6,MIN_SIZE_SIM=0.6):
+    def __init__(self,MAX_HORIZONTAL_GAP=100,MIN_V_OVERLAPS=0.6,MIN_SIZE_SIM=0.6):
         """
         pass
         """
@@ -25,10 +25,10 @@ class TextDetector:
             
         
     def detect(self, text_proposals,scores,size,
-               TEXT_PROPOSALS_MIN_SCORE=0.7,
+               TEXT_PROPOSALS_MIN_SCORE=0.1,
                TEXT_PROPOSALS_NMS_THRESH=0.3,
-               TEXT_LINE_NMS_THRESH = 0.3,
-               LINE_MIN_SCORE=0.8
+               TEXT_LINE_NMS_THRESH = 0.99,
+               LINE_MIN_SCORE=0.1
                ):
         """
         Detecting texts from an image
@@ -41,9 +41,9 @@ class TextDetector:
         """
         #text_proposals, scores=self.text_proposal_detector.detect(im, cfg.MEAN)
         keep_inds=np.where(scores>TEXT_PROPOSALS_MIN_SCORE)[0]### 
-        text_proposals, scores=text_proposals[keep_inds], scores[keep_inds]
+        text_proposals, scores=text_proposals[keep_inds], scores[keep_inds] #1347,4
         sorted_indices=np.argsort(scores.ravel())[::-1] # 获取分数顺序排列的索引
-        text_proposals, scores=text_proposals[sorted_indices], scores[sorted_indices]
+        text_proposals, scores=text_proposals[sorted_indices], scores[sorted_indices]#1347,4
 
         # nms for text proposals
         if len(text_proposals)>0:

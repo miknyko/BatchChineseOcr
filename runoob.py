@@ -3,6 +3,9 @@ import os
 import numpy as np
 import math
 import time
+import cv2
+from tqdm import tqdm
+
 from PIL import Image
 from text.keras_yolo3 import yolo_text,box_layer,K
 from text.detector.detectors import TextDetector
@@ -13,6 +16,7 @@ keras_anchors = '8,11, 8,16, 8,23, 8,33, 8,48, 8,97, 8,139, 8,198, 8,283'
 class_names = ['none','text',]
 pwd = os.getcwd()
 kerasTextModel=os.path.join(pwd,"models","text.h5")
+# os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
 #预处理anchors
 anchors = [float(x) for x in keras_anchors.split(',')]
@@ -24,6 +28,7 @@ num_classes = len(class_names)
 #读取模型，加载参数
 textModel = yolo_text(num_classes,anchors)
 textModel.load_weights(kerasTextModel)
+
 
 def pad_image(img,reshape_size):
     """
@@ -45,7 +50,7 @@ def pad_image(img,reshape_size):
         img /= 255.
         pad_size = reshape_size[1] - new_w
         # 横向pad至指定size
-        img = np.pad(img,((0,0),(0,pad_size),(0,0)))
+        img = np.pad(img,((0,0),(0,pad_size),(0,0)),constant_values=255)
     
     else:
         new_w = reshape_size[0]
@@ -55,7 +60,7 @@ def pad_image(img,reshape_size):
         img /= 255.
         pad_size = reshape_size[1] - new_h
         # 竖向pad至指定size
-        img = np.pad(img,((0,pad_size),(0,0),(0,0)))
+        img = np.pad(img,((0,pad_size),(0,0),(0,0)),constant_values=255)
 
     return img,(w,h)
 
@@ -67,8 +72,8 @@ def net_output_process(batch_preds,batch_shape,batch_shape_padded,prob=0.05):
         array形状为(batch_size,grid_size_w,grid_size_h,3*(4+1+num_classes))
     @params batch_shape(list of tuples):图片原始长宽
     @params prob(float):置信度小于prob的box将被忽略
-    @returns batch_boxes
-    @returns batch_scores
+    @returns batch_boxes(array): [字符区域数量，8]
+    @returns batch_scores:[字符区域数量,]
     """
     batch_boxes = []
     batch_scores = []
@@ -78,16 +83,18 @@ def net_output_process(batch_preds,batch_shape,batch_shape_padded,prob=0.05):
     MIN_SIZE_SIM = 0.6
     textdetector = TextDetector(MAX_HORIZONTAL_GAP,MIN_V_OVERLAPS,MIN_SIZE_SIM)
 
-    TEXT_PROPOSALS_MIN_SCORE = 0.7
+    TEXT_PROPOSALS_MIN_SCORE = 0.1
     TEXT_PROPOSALS_NMS_THRESH = 0.3
-    TEXT_LINE_NMS_THRESH = 0.3
-    LINE_MIN_SCORE = 0.8
+    TEXT_LINE_NMS_THRESH = 0.99
+    LINE_MIN_SCORE = 0.1
+    leftAdjustAlph = 0.01
+    rightAdjustAlph = 0.01
 
     # 首先初步对模型主干输出进行预处理
     for y1,y2,y3,image_shape,input_shape in zip(batch_preds[0],batch_preds[1],batch_preds[2],batch_shape,batch_shape_padded):
         outputs = [y1,y2,y3,image_shape,input_shape]
         box,scores = box_layer(outputs,anchors,num_classes)
-        w,h = image_shape
+        h,w = image_shape
         keep = np.where(scores>prob)
         # box[:, 0:4][box[:, 0:4]<0] = 0
         box = np.array(box)
@@ -103,20 +110,16 @@ def net_output_process(batch_preds,batch_shape,batch_shape_padded,prob=0.05):
          # 筛选出需要的box，并且进行nms，字符行组合
         boxes,scores = textdetector.detect(boxes,
                                 scores[:, np.newaxis],
-                                (image_shape[1],image_shape[0]),
+                                (h,w),
                                 TEXT_PROPOSALS_MIN_SCORE,
                                 TEXT_PROPOSALS_NMS_THRESH,
-                                TEXT_LINE_NMS_THRESH,
-                                LINE_MIN_SCORE
-                                )
+                                TEXT_LINE_NMS_THRESH,LINE_MIN_SCORE)
         boxes = sort_box(boxes)
         batch_boxes.append(boxes)
         batch_scores.append(scores)
-        print('done')
+        # print('done')
 
     return batch_boxes,batch_scores
-
-
 
 class YoloImageGenerator(tf.keras.utils.Sequence):
     """
@@ -138,11 +141,13 @@ class YoloImageGenerator(tf.keras.utils.Sequence):
         self.reshape_vertical_size  = (reshape_size[1],reshape_size[0])
         self.horizontal_image = []
         self.vertical_image = []
+        self.images_size = {} 
         
         # 横向和竖向图像不能放在一个batch里面读取，需要分开
         for pth in self.filenames:
             img = Image.open(pth).convert('RGB')
             w,h = img.size
+            self.images_size[pth] = (h,w) #注意顺序为高宽
             if w >= h:
                 self.horizontal_image.append(pth)
             else:
@@ -150,6 +155,7 @@ class YoloImageGenerator(tf.keras.utils.Sequence):
 
         self.horizontal_batch = math.ceil(len(self.horizontal_image) / self.batch_size)
         self.vertical_batch = math.ceil(len(self.vertical_image) / self.batch_size)
+        
      
     def __len__(self):
         return self.horizontal_batch + self.vertical_batch
@@ -157,37 +163,35 @@ class YoloImageGenerator(tf.keras.utils.Sequence):
     def __getitem__(self,idx):
         """
         tensorflow sequence内置函数，每一次调用返回一个批次的
-        图像array,原始尺寸，pad后尺寸，及图片完整路径
+        图像array,原始尺寸（顺序为高宽），pad后尺寸(顺序为高宽)，及图片完整路径
         """
         # 首先预测横向图片
         if idx < self.horizontal_batch:
             batch_image = self.horizontal_image[idx * self.batch_size:(idx + 1) * self.batch_size]
             batch_array = []
-            batch_shape = []
+            batch_shape = [self.images_size[impth] for impth in batch_image]
             batch_shape_padded = []
-
-            for i,pth in enumerate(batch_image):
+    
+            for pth in batch_image:
                 img = Image.open(pth).convert('RGB')
                 img,(w,h)= pad_image(img,self.reshape_size)
                 batch_array.append(img)
-                batch_shape.append((w,h))
                 batch_shape_padded.append(self.reshape_horizontal_size)
             
-
             return np.stack(batch_array),batch_shape,batch_shape_padded,batch_image
+        
         
         # 横向batch结束后预测竖向batch
         else:
             new_idx = idx - self.horizontal_batch
             batch_image = self.vertical_image[new_idx * self.batch_size:(new_idx + 1) * self.batch_size]
             batch_array = []
-            batch_shape = []
+            batch_shape = [self.images_size[impth] for impth in batch_image]
             batch_shape_padded = []
-            for i,pth in enumerate(batch_image):
+            for pth in batch_image:
                 img = Image.open(pth).convert('RGB')
                 img,(w,h) = pad_image(img,self.reshape_size)
                 batch_array.append(img)
-                batch_shape.append((w,h))
                 batch_shape_padded.append(self.reshape_vertical_size)
 
             return np.stack(batch_array),batch_shape,batch_shape_padded,batch_image
@@ -208,7 +212,39 @@ def sort_box(box):
     box = sorted(box,key=lambda x:sum([x[1],x[3],x[5],x[7]]))
     return list(box)
 
-def rotate_cut_img(im,box,leftAdjustAlph=0.0,rightAdjustAlph=0.0):
+def solve(box):
+     """
+     绕 cx,cy点 w,h 旋转 angle 的坐标
+     x = cx-w/2
+     y = cy-h/2
+     x1-cx = -w/2*cos(angle) +h/2*sin(angle)
+     y1 -cy= -w/2*sin(angle) -h/2*cos(angle)
+     
+     h(x1-cx) = -wh/2*cos(angle) +hh/2*sin(angle)
+     w(y1 -cy)= -ww/2*sin(angle) -hw/2*cos(angle)
+     (hh+ww)/2sin(angle) = h(x1-cx)-w(y1 -cy)
+
+     """
+     x1,y1,x2,y2,x3,y3,x4,y4= box[:8]
+     cx = (x1+x3+x2+x4)/4.0
+     cy = (y1+y3+y4+y2)/4.0  
+     w = (np.sqrt((x2-x1)**2+(y2-y1)**2)+np.sqrt((x3-x4)**2+(y3-y4)**2))/2
+     h = (np.sqrt((x2-x3)**2+(y2-y3)**2)+np.sqrt((x1-x4)**2+(y1-y4)**2))/2   
+     #x = cx-w/2
+     #y = cy-h/2
+     
+     sinA = (h*(x1-cx)-w*(y1 -cy))*1.0/(h*h+w*w)*2
+     if abs(sinA)>1:
+            angle = None
+     else:
+        angle = np.arcsin(sinA)
+     return angle,w,h,cx,cy
+
+
+def rotate_cut_img(im,box,leftAdjustAlph=0.01,rightAdjustAlph=0.01):
+    """
+    一些后续处理函数，不可动
+    """
     angle,w,h,cx,cy = solve(box)
     degree_ = angle*180.0/np.pi
     
@@ -222,46 +258,38 @@ def rotate_cut_img(im,box,leftAdjustAlph=0.0,rightAdjustAlph=0.0):
     box = {'cx':cx,'cy':cy,'w':newW,'h':newH,'degree':degree_,}
     return tmpImg,box
 
-def cut_batch(filename,boxes,leftAdjustAlph=0.0,rightAdjustAlph=0.0):
+def cut_batch(img,filename,boxes,leftAdjustAlph=0.01,rightAdjustAlph=0.01):
     """
     将批图像剪切测试结果
     """
-    im = Image.open(filename).convert('RGB')
-    cut_areas = []
+    img = np.squeeze(img*255).astype(np.uint8)
+    img = Image.fromarray(img)
+    print(img.size)
     for index,box in enumerate(boxes):
-        partImg,box = rotate_cut_img(im,box,leftAdjustAlph,rightAdjustAlph)
+        partImg,box = rotate_cut_img(img,box,leftAdjustAlph,rightAdjustAlph)
         partImg.save(f'result/{os.path.split(filename)[1]}_{index}.jpg')
     print(f'[INFO]图片{os.path.split(filename)[1]}已经处理完毕')
 
 
-def main():
-    start = time.time()
-    # img = Image.open(r'C:\Users\Thinkpad\LabelOCR\test_iamge\pic00067747cx_guowejie1578902351244.jpeg').convert('RGB')
-    batchtest = np.random.rand(16,608,900,3)
-    batch_shape_test = [(406,406)] * 16
-    batch_shape_padded_test = [(608,900)] * 16
-    pred = textModel.predict_on_batch(batchtest)
-    boxes,scores = net_output_process(pred,batch_shape_test,batch_shape_padded_test)
-    end = time.time()
-    print('test passed!')
-    print(f'{end - start}s')
-
 def test():
+    """
+    测试已通过
+    """
     start = time.time()
-    test_pth = r'E:\dataset\yolotest'
+    test_pth = r'D:\images\fapiaotest'
     filenames = [os.path.join(test_pth,pth) for pth in os.listdir(test_pth) ]
-    generator = YoloImageGenerator(filenames,batch_size=4)
-    for batch_img,batch_shape,batch_shape_padded,batch_filenames in generator:
-        pred = textModel(batch_img,training=False)
-        boxes,scores = net_output_process(pred,batch_shape,batch_shape_padded)
-        for i,box in enumerate(boxes):
-            # 分别处理每张图片
-            box = sort_box(box)
-            filename = batch_filenames[i]
-            cut_batch(filename,box)
+    generator = YoloImageGenerator(filenames,batch_size=1)
+    for batch_img,batch_shape,batch_shape_padded,batch_filenames in tqdm(generator):
+        print('predcting')
+        batch_preds = textModel(batch_img,training=False)
+        batch_boxes,batch_scores = net_output_process(batch_preds,batch_shape_padded,batch_shape_padded)
+        for img,filename,boxes in zip(batch_img,batch_filenames,batch_boxes):
+            cut_batch(img,filename,boxes)
+    end = time.time()
+    print(end - start)
 
 
 if __name__ == "__main__":
     test()
-    # main()
+
 
