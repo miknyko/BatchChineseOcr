@@ -78,6 +78,7 @@ def angle_detect_dnn(img,adjust=True):
                                       size=(224, 224),
                                       swapRB=True ,
                                       mean=[103.939,116.779,123.68],crop=False);
+    
     angleNet.setInput(inputBlob)
     pred = angleNet.forward()
     index = np.argmax(pred,axis=1)[0]

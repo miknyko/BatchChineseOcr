@@ -1,3 +1,9 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+#Author: Rockstar He
+#Date: 2020-06-30
+#Description:
+
 import tensorflow as tf
 import os
 import numpy as np
@@ -129,8 +135,8 @@ class YoloImageGenerator(tf.keras.utils.Sequence):
     def __init__(self,filenames,batch_size=32,reshape_size=(608,1280)):
         """
         @params filenames(list):每一个元素为图片绝对路径
-        @batch_size(int):批处理大小
-        @reshape_size(tuple):短边固定大小，长边固定大小
+        @params batch_size(int):批处理大小
+        @params reshape_size(tuple):短边固定大小，长边固定大小
         """
         self.batch_size = batch_size
         self.filenames = filenames
