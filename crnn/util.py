@@ -14,6 +14,12 @@ def resizeNormalize(img,imgH=32):
     
     
 def strLabelConverter(res,alphabet):
+        """
+        原始解码，将序列中的连续字母塌缩为一个字母，
+        @param res(tensor):模型预测的结果，size of (seqlen)
+        @param alphabet(string):所使用的字母表
+        @return string:识别的文字
+        """
         N = len(res)
         raw = []
         for i in range(N):
