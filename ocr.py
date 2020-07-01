@@ -121,23 +121,27 @@ class CRNN(nn.Module):
         
     
 class OcrDataGenerator(torch.utils.data.Dataset):
-    def __init__(self,filenames=[],batch_size=32,GPU=False):
-        self.filenames = filenames
+    def __init__(self,files,batch_size=32,GPU=False):
+        self.files = files
         self.batch_size = batch_size
         self.imgH = 32
         self.GPU = GPU
 
     def __len__(self):
-        return math.ceil(len(self.filenames) / len(self.batch_size))
+        return math.ceil(len(self.files) / len(self.batch_size))
     
     def __getitem__(self,idx):
-        batch_image = self.filenames[idx * self.batch_size : (idx + 1) *  self.batch_size]
-        batch_array = []
+        batch_files = self.files[idx * self.batch_size : (idx + 1) *  self.batch_size]
+        try:
+            batch_image = [Image.open(pth) for pth in batch_files]
+        except:
+            batch_image = batch_files
+        
         batch_max_width = 0
-
-        for pth in batch_image:
+        batch_array = []
+        for img in batch_image:
             # 采集batch内每张图片的宽度，找出最长宽度，并按比例初步resize至高为指定高度
-            img = Image.open(pth).convert('L')
+            img = img.convert('L')
             img = resizeNormalize(img,self.imgH)
             h, w = img.shape
             batch_max_width = max(w,batch_max_width)
@@ -162,18 +166,18 @@ class OcrDataGenerator(torch.utils.data.Dataset):
 
 def main():
     pwd = os.getcwd()
-    test_path = r'C:\Users\192.168.2.52\chineseocr\result'
+    test_path = os.path.join(pwd,"result")
     # OCR模型文件
     ocr_model_path = os.path.join(pwd,"models","ocr-lstm.pth")
     filenames = [os.path.join(test_path, pth) for pth in os.listdir(test_path)]
     # 初始化一个dataloader
-    dataloader = OcrDataGenerator(filenames=filenames, batch_size=32, GPU=True)
+    dataloader = OcrDataGenerator(files=filenames, batch_size=8, GPU=False)
     # 读取字母表
     alphabet = alphabetChinese
     # 读取字母表长度，加1位blank位
     nclass = len(alphabet)+1 
     # 初始化一个CRNN模型,注意参数
-    crnn = CRNN(32, 1, nclass, 256, leakyRelu=False,GPU=True,alphabet=alphabet)
+    crnn = CRNN(32, 1, nclass, 256, leakyRelu=False,GPU=False,alphabet=alphabet)
     # 读取参数
     crnn.load_weights(ocr_model_path)
     # 遍历dataloader，开始batch prediction

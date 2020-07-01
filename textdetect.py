@@ -249,7 +249,7 @@ def solve(box):
 
 def rotate_cut_img(im,box,leftAdjustAlph=0.01,rightAdjustAlph=0.01):
     """
-    一些后续处理函数，不可动
+    一些图片后续处理函数，不可动
     """
     angle,w,h,cx,cy = solve(box)
     degree_ = angle*180.0/np.pi
@@ -264,17 +264,24 @@ def rotate_cut_img(im,box,leftAdjustAlph=0.01,rightAdjustAlph=0.01):
     box = {'cx':cx,'cy':cy,'w':newW,'h':newH,'degree':degree_,}
     return tmpImg,box
 
-def cut_batch(img,filename,boxes,leftAdjustAlph=0.01,rightAdjustAlph=0.01):
+def cut_batch(img,filename,boxes,leftAdjustAlph=0.01,rightAdjustAlph=0.01,save=False):
     """
-    将批图像剪切测试结果
+    将单张图片按照box剪切
+    @param img(array):单张图片array
+    @param filename(str):图片完整路径
+    @param boxes(array):该图片文字区域检测结果坐标，size of [n,8]
+    @return partImgs(list of Image):剪切后的小图片
     """
     img = np.squeeze(img*255).astype(np.uint8)
     img = Image.fromarray(img)
-    print(img.size)
+    partImgs = []
     for index,box in enumerate(boxes):
         partImg,box = rotate_cut_img(img,box,leftAdjustAlph,rightAdjustAlph)
-        partImg.save(f'result/{os.path.split(filename)[1]}_{index}.jpg')
-    print(f'[INFO]图片{os.path.split(filename)[1]}已经处理完毕')
+        partImgs.append(partImg)
+        if save:
+            partImg.save(f'result/{os.path.split(filename)[1]}_{index}.jpg')
+    return partImgs
+    # print(f'[INFO]图片{os.path.split(filename)[1]}已经处理完毕')
 
 
 def test():
@@ -290,7 +297,7 @@ def test():
         batch_preds = textModel(batch_img,training=False)
         batch_boxes,batch_scores = net_output_process(batch_preds,batch_shape_padded,batch_shape_padded)
         for img,filename,boxes in zip(batch_img,batch_filenames,batch_boxes):
-            cut_batch(img,filename,boxes)
+            cut_batch(img,filename,boxes,save=True)
     end = time.time()
     print(end - start)
 
