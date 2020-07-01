@@ -11,6 +11,7 @@ import torch
 import math
 import time
 
+from tqdm import tqdm
 from crnn.keys import alphabetChinese, alphabetEnglish
 from collections import OrderedDict
 from crnn.util import resizeNormalize, strLabelConverter
@@ -35,7 +36,7 @@ class BidirectionalLSTM(nn.Module):
 
 class CRNN(nn.Module):
 
-    def __init__(self, imgH, nc, nclass, nh, leakyRelu=False,lstmFlag=True,GPU=True,alphabet=None):
+    def __init__(self, imgH, nc, nh, leakyRelu=False,lstmFlag=True,GPU=True,alphabet=alphabetChinese):
         """CRNN网络"""
         super(CRNN, self).__init__()
         assert imgH % 16 == 0, 'imgH has to be a multiple of 16'
@@ -47,6 +48,7 @@ class CRNN(nn.Module):
         self.lstmFlag = lstmFlag
         self.GPU = GPU
         self.alphabet = alphabet
+        self.nclass = len(self.alphabet) + 1
         cnn = nn.Sequential()
 
         def convRelu(i, batchNormalization=False):
@@ -80,9 +82,9 @@ class CRNN(nn.Module):
         if self.lstmFlag:
             self.rnn = nn.Sequential(
                 BidirectionalLSTM(512, nh, nh),
-                BidirectionalLSTM(nh, nh, nclass))
+                BidirectionalLSTM(nh, nh, self.nclass))
         else:
-            self.linear = nn.Linear(nh*2, nclass)
+            self.linear = nn.Linear(nh*2, self.nclass)
             
 
     def forward(self, input):
@@ -171,19 +173,19 @@ def main():
     ocr_model_path = os.path.join(pwd,"models","ocr-lstm.pth")
     filenames = [os.path.join(test_path, pth) for pth in os.listdir(test_path)]
     # 初始化一个dataloader
-    dataloader = OcrDataGenerator(files=filenames, batch_size=8, GPU=False)
+    dataloader = OcrDataGenerator(files=filenames, batch_size=16, GPU=True)
     # 读取字母表
     alphabet = alphabetChinese
     # 读取字母表长度，加1位blank位
     nclass = len(alphabet)+1 
     # 初始化一个CRNN模型,注意参数
-    crnn = CRNN(32, 1, nclass, 256, leakyRelu=False,GPU=False,alphabet=alphabet)
+    crnn = CRNN(32, 1, 256, leakyRelu=False,GPU=True,alphabet=alphabet)
     # 读取参数
     crnn.load_weights(ocr_model_path)
     # 遍历dataloader，开始batch prediction
     result = []
     start = time.time()
-    for batch_image in dataloader:
+    for batch_image in tqdm(dataloader):
         preds = crnn(batch_image) # size of [seq_len,batchsize,nclass]
         preds = preds.argmax(axis=2)
         preds = preds.permute(1, 0)

@@ -289,9 +289,9 @@ def test():
     测试已通过
     """
     start = time.time()
-    test_pth = r'D:\images\fapiaotest'
+    test_pth = r'D:\images\fapiaotest\test'
     filenames = [os.path.join(test_pth,pth) for pth in os.listdir(test_pth) ]
-    generator = YoloImageGenerator(filenames,batch_size=1)
+    generator = YoloImageGenerator(filenames,batch_size=2)
     for batch_img,batch_shape,batch_shape_padded,batch_filenames in tqdm(generator):
         print('predcting')
         batch_preds = textModel(batch_img,training=False)
@@ -299,10 +299,11 @@ def test():
         for img,filename,boxes in zip(batch_img,batch_filenames,batch_boxes):
             cut_batch(img,filename,boxes,save=True)
     end = time.time()
-    print(end - start)
+    print((end - start)/len(filenames))
 
 
 if __name__ == "__main__":
+    print(tf.test.is_gpu_available())
     test()
 
 

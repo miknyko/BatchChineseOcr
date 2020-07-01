@@ -36,9 +36,16 @@ def rotate_nms(boxes, scores, score_threshold=0.5, nms_threshold=0.3):
        cy = round(cy,4)
        
        return ((cx,cy),(w,h),angle)
-   
-    newboxes =  [rotate_box(box) for box in boxes]
-    newscores = [ round(float(x),6) for x in scores]
+
+    newboxes = []
+    newscores = []
+    for box,x in zip(boxes,scores):
+        try:
+            newboxes.append(rotate_box(box))
+            newscores.append(round(float(x),6))
+        except:
+            continue
+
     index = cv2.dnn.NMSBoxesRotated(newboxes, newscores, score_threshold=score_threshold, nms_threshold=nms_threshold)
     if len(index)>0:
        index = index.reshape((-1,))
