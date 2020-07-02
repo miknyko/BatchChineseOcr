@@ -15,7 +15,24 @@
 
 1. 安装环境
 
+   由于此项目两个框架共存，安装时需注意tf和pytorch版本！
+
+   推荐
+
+   `pip install tensorflow-gpu==2.0.0`
+
+   `conda install pytorch==1.2.0 torchvision==0.4.0`
+
+   `cuda == 10.0`
+
+   `cudnn == 7.4.2`
+
+   其他依赖安装
+
    `pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple`
 
-2. 
+     
 
+2. 使用说明（默认使用GPU）
+
+   角度检测，文本检测，OCR三个模块推荐分别运行，以最大化批运算速度，脚本内有详细示例说明用法。

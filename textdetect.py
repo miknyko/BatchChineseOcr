@@ -275,12 +275,14 @@ def cut_batch(img,filename,boxes,leftAdjustAlph=0.01,rightAdjustAlph=0.01,save=F
     img = np.squeeze(img*255).astype(np.uint8)
     img = Image.fromarray(img)
     partImgs = []
+    boxes = []
     for index,box in enumerate(boxes):
         partImg,box = rotate_cut_img(img,box,leftAdjustAlph,rightAdjustAlph)
         partImgs.append(partImg)
+        boxes.append(box)
         if save:
             partImg.save(f'result/{os.path.split(filename)[1]}_{index}.jpg')
-    return partImgs
+    return partImgs,boxes
     # print(f'[INFO]图片{os.path.split(filename)[1]}已经处理完毕')
 
 
@@ -297,6 +299,7 @@ def test():
         batch_preds = textModel(batch_img,training=False)
         batch_boxes,batch_scores = net_output_process(batch_preds,batch_shape_padded,batch_shape_padded)
         for img,filename,boxes in zip(batch_img,batch_filenames,batch_boxes):
+            print(filename)
             cut_batch(img,filename,boxes,save=True)
     end = time.time()
     print((end - start)/len(filenames))
