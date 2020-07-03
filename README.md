@@ -35,9 +35,9 @@
 
 2. 下载模型
 
-   模型下载地址:  [百度云](https://pan.baidu.com/s/1rCCVfIXmitX-chrpyxLFQg)
+   模型下载地址:  [百度云](https://pan.baidu.com/s/1PonzgGvHO5JeMMGCfNFrog)
 
-   提取码: i7qr
+   提取码: ebzj
 
      
 
